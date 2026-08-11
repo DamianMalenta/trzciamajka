@@ -1,0 +1,21 @@
+# Zależności
+node_modules/
+
+# Konfiguracja (sekrety — NIE commitować)
+.env
+
+# Oryginały zdjęć (kopia zapasowa po kompresji)
+zdjecia/original/
+
+# Skrypt kompresji (jednorazowy, niepotrzebny na produkcji)
+compress-photos.js
+
+# Tymczasowe pliki testowe
+test-*.js
+tmp.*
+
+# System / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,56 @@
+[
+  {
+    "id": 1,
+    "photo_path": "/zdjecia/PXL_20260811_174312133.jpg",
+    "photo_file": "PXL_20260811_174312133.jpg",
+    "lat": 53.039014,
+    "lng": 16.460474,
+    "hint_text": "Bilet #1 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  },
+  {
+    "id": 2,
+    "photo_path": "/zdjecia/PXL_20260811_174946646.jpg",
+    "photo_file": "PXL_20260811_174946646.jpg",
+    "lat": 53.041726,
+    "lng": 16.458021,
+    "hint_text": "Bilet #2 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  },
+  {
+    "id": 3,
+    "photo_path": "/zdjecia/PXL_20260811_175631625.jpg",
+    "photo_file": "PXL_20260811_175631625.jpg",
+    "lat": 53.057082622254164,
+    "lng": 16.458302583634428,
+    "hint_text": "Bilet #3 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  },
+  {
+    "id": 4,
+    "photo_path": "/zdjecia/PXL_20260811_175935341.jpg",
+    "photo_file": "PXL_20260811_175935341.jpg",
+    "lat": 53.05859994452503,
+    "lng": 16.463822269149727,
+    "hint_text": "Bilet #4 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  },
+  {
+    "id": 5,
+    "photo_path": "/zdjecia/PXL_20260811_180954781.jpg",
+    "photo_file": "PXL_20260811_180954781.jpg",
+    "lat": 53.042965029211786,
+    "lng": 16.461328484285765,
+    "hint_text": "Bilet #5 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  },
+  {
+    "id": 6,
+    "photo_path": "/zdjecia/PXL_20260811_182014745.jpg",
+    "photo_file": "PXL_20260811_182014745.jpg",
+    "lat": 53.04073372225498,
+    "lng": 16.467256036538107,
+    "hint_text": "Bilet #6 — znajdź miejsce ze zdjęcia!",
+    "is_found": false
+  }
+]

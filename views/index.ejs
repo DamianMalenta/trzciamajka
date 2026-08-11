@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Trzciamajka — Znajdź Bilet!</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* --- Header (kompaktowy) --- */
+    .header {
+      padding: 12px 16px;
+      background: rgba(15,23,42,0.95);
+      border-bottom: 1px solid rgba(251,191,36,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .header h1 {
+      font-size: 1.3rem;
+      background: linear-gradient(90deg, #fbbf24, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      white-space: nowrap;
+    }
+    .header .progress-mini {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .header .progress-mini .count { color: #fbbf24; font-weight: 700; }
+
+    /* --- Kontener główny: mapa + dolny panel --- */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      min-height: 0;
+    }
+
+    #map {
+      flex: 1;
+      min-height: 0;
+      background: #1e293b;
+      z-index: 1;
+    }
+
+    /* --- Dolny panel (info biletu + odległość) --- */
+    .bottom-panel {
+      background: rgba(15,23,42,0.97);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(251,191,36,0.2);
+      padding: 14px 16px;
+      flex-shrink: 0;
+      max-height: 45vh;
+      overflow-y: auto;
+    }
+
+    .ticket-info {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .ticket-info img {
+      width: 80px;
+      height: 80px;
+      border-radius: 10px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .ticket-info .info {
+      flex: 1;
+      min-width: 0;
+    }
+    .ticket-info .ticket-num {
+      color: #fbbf24;
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+    }
+    .ticket-info .hint {
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }
+
+    /* --- Wskaźnik odległości --- */
+    .distance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: rgba(30,41,59,0.8);
+      border-radius: 10px;
+      border: 1px solid rgba(251,191,36,0.1);
+    }
+    .distance-row .dist-block {
+      display: flex;
+      flex-direction: column;
+    }
+    .distance-row .dist-label {
+      font-size: 0.7rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .distance-row .dist-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      transition: color 0.3s;
+    }
+    .distance-row .dist-value.far { color: #94a3b8; }
+    .distance-row .dist-value.medium { color: #fbbf24; }
+    .distance-row .dist-value.close { color: #4ade80; }
+    .distance-row .dist-status {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      text-align: right;
+      max-width: 50%;
+    }
+    .distance-row .dist-status.close {
+      color: #4ade80;
+      font-weight: 600;
+    }
+
+    /* --- Pasek zbliżenia --- */
+    .closeness-bar {
+      height: 5px;
+      background: #1e293b;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .closeness-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease, background 0.3s;
+      width: 0%;
+    }
+
+    /* --- Ostrzeżenie GPS --- */
+    .gps-warning {
+      padding: 14px 16px;
+      background: rgba(248,113,113,0.15);
+      text-align: center;
+      color: #f87171;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .gps-warning button {
+      margin-top: 8px;
+      padding: 8px 20px;
+      border: 1px solid rgba(248,113,113,0.4);
+      border-radius: 8px;
+      background: transparent;
+      color: #f87171;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .gps-warning button:hover { background: rgba(248,113,113,0.15); }
+
+    /* --- Modal „Odebrałem bilet” --- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 20px;
+      padding: 32px 24px;
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(34,197,94,0.2);
+      animation: modalIn 0.4s ease;
+    }
+    @keyframes modalIn {
+      from { transform: scale(0.8); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .modal .icon {
+      font-size: 4rem;
+      margin-bottom: 16px;
+      animation: bounce 1s infinite;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .modal h2 {
+      color: #4ade80;
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+    }
+    .modal p {
+      color: #94a3b8;
+      margin-bottom: 24px;
+      font-size: 1rem;
+    }
+    .modal .btn-receive {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 10px;
+    }
+    .modal .btn-receive:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(34,197,94,0.4);
+    }
+    .modal .btn-receive:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .modal .btn-dismiss {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid rgba(148,163,184,0.3);
+      border-radius: 10px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    .modal .btn-dismiss:hover { background: rgba(148,163,184,0.1); }
+
+    /* --- Ekrany końcowe (allFound, congrats, etc.) --- */
+    .end-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .end-screen .icon { font-size: 4rem; margin-bottom: 20px; }
+    .end-screen h2 { font-size: 1.6rem; color: #fbbf24; margin-bottom: 10px; }
+    .end-screen p { color: #94a3b8; font-size: 1.05rem; line-height: 1.6; }
+    .end-screen a { color: #fbbf24; }
+
+    /* --- Leaflet customizacje --- */
+    .leaflet-container { background: #1e293b; }
+    .user-marker {
+      width: 20px; height: 20px;
+      background: #3b82f6;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(59,130,246,0.6);
+    }
+    .ticket-marker-icon {
+      font-size: 1.8rem;
+      text-align: center;
+      line-height: 36px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎟️ Trzciamajka</h1>
+    <div class="progress-mini">
+      <span>Postęp:</span>
+      <span class="count"><%= foundCount %>/<%= totalTickets %></span>
+    </div>
+  </div>
+
+  <% if (view === 'allFound') { %>
+    <div class="end-screen">
+      <div class="icon">🎉</div>
+      <h2>Wszystkie bilety zostały odnalezione!</h2>
+      <p>Gra zakończona. Dziękujemy za udział!</p>
+    </div>
+  <% } else if (view === 'noCoordinates') { %>
+    <div class="end-screen">
+      <div class="icon">🗺️</div>
+      <h2>Przygotowujemy mapę…</h2>
+      <p>Zdjęcia nie zawierają jeszcze współrzędnych GPS.<br>Administrator musi ustawić lokalizacje w panelu <a href="/admin">/admin</a>.</p>
+    </div>
+  <% } else if (view === 'congrats') { %>
+    <div class="end-screen">
+      <div class="icon">🏆</div>
+      <h2>Gratulacje!</h2>
+      <p>Bilet #<%= ticket.id %> został odnaleziony.<br>Dziękujemy za udział w zabawie!</p>
+    </div>
+  <% } else if (view === 'taken') { %>
+    <div class="end-screen">
+      <div class="icon">😔</div>
+      <h2>Bilet został już zabrany</h2>
+      <p>Bilet #<%= ticket.id %> został odnaleziony przez kogoś innego.<br>Spróbuj ponownie w innej akcji!</p>
+    </div>
+  <% } else if (view === 'ticket') { %>
+    <div class="main">
+      <div id="map"></div>
+
+      <div class="gps-warning" id="gpsWarning" style="display:none;">
+        <div id="gpsWarningText">Aby znaleźć bilet, zezwól na dostęp do lokalizacji.</div>
+        <button onclick="requestLocation()">Spróbuj ponownie</button>
+      </div>
+
+      <div class="bottom-panel">
+        <div class="ticket-info">
+          <img src="<%= ticket.photo_path %>" alt="Wskazówka" />
+          <div class="info">
+            <div class="ticket-num">Bilet #<%= ticket.id %></div>
+            <div class="hint">💡 <%= ticket.hint_text %></div>
+          </div>
+        </div>
+
+        <div class="distance-row">
+          <div class="dist-block">
+            <span class="dist-label">Odległość</span>
+            <span class="dist-value far" id="distValue">—</span>
+          </div>
+          <span class="dist-status" id="distStatus">Łączenie z GPS…</span>
+        </div>
+        <div class="closeness-bar">
+          <div class="closeness-fill" id="closenessFill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal „Odebrałem bilet” -->
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal">
+        <div class="icon">🎉</div>
+        <h2>Jesteś na miejscu!</h2>
+        <p>Bilet #<%= ticket.id %> jest w pobliżu.<br>Odbierz go i potwierdź poniżej.</p>
+        <button class="btn-receive" id="receiveBtn" onclick="confirmFound()">
+          ✅ Odebrałem bilet!
+        </button>
+        <button class="btn-dismiss" onclick="dismissModal()">
+          Jeszcze nie, szukam dalej
+        </button>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (view === 'ticket') { %>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const TICKET_LAT = <%= ticket.lat %>;
+    const TICKET_LNG = <%= ticket.lng %>;
+    const GEOFENCE_RADIUS = 30;   // metry — promień odbioru biletu
+    const BLUR_RADIUS = 100;      // metry — promień rozmytego kółka wokół biletu
+
+    let map = null;
+    let userMarker = null;
+    let userAccuracyCircle = null;
+    let ticketMarker = null;
+    let ticketBlurCircle = null;
+    let watchId = null;
+    let currentLat = null;
+    let currentLng = null;
+    let modalShown = false;
+
+    function haversine(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function formatDistance(m) {
+      if (m < 1000) return Math.round(m) + ' m';
+      return (m / 1000).toFixed(2) + ' km';
+    }
+
+    function initMap() {
+      map = L.map('map', { zoomControl: false, attributionControl: false }).setView([TICKET_LAT, TICKET_LNG], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(map);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      // Pinezka biletu
+      const ticketIcon = L.divIcon({
+        className: '',
+        html: '<div class="ticket-marker-icon">🎟️</div>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      });
+      ticketMarker = L.marker([TICKET_LAT, TICKET_LNG], { icon: ticketIcon }).addTo(map);
+
+      // Rozmyte kółko 100m wokół biletu (uczestnik wie gdzie iść, ale nie dokładne miejsce)
+      ticketBlurCircle = L.circle([TICKET_LAT, TICKET_LNG], {
+        radius: BLUR_RADIUS,
+        color: '#fbbf24',
+        fillColor: '#fbbf24',
+        fillOpacity: 0.15,
+        weight: 1,
+        dashArray: '6 6',
+      }).addTo(map);
+    }
+
+    function updateUserMarker(lat, lng, accuracy) {
+      const latlng = [lat, lng];
+
+      if (!userMarker) {
+        const userIcon = L.divIcon({
+          className: '',
+          html: '<div class="user-marker"></div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
+        });
+        userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+        userAccuracyCircle = L.circle(latlng, {
+          radius: accuracy || 20,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.1,
+          weight: 1,
+        }).addTo(map);
+        // Wycentruj mapę na użytkowniku przy pierwszej lokalizacji
+        map.setView(latlng, 16);
+      } else {
+        userMarker.setLatLng(latlng);
+        userAccuracyCircle.setLatLng(latlng);
+        if (accuracy) userAccuracyCircle.setRadius(accuracy);
+      }
+    }
+
+    function updateDistance(dist) {
+      const distEl = document.getElementById('distValue');
+      const statusEl = document.getElementById('distStatus');
+      const fillEl = document.getElementById('closenessFill');
+
+      distEl.textContent = formatDistance(dist);
+      distEl.className = 'dist-value';
+
+      if (dist <= GEOFENCE_RADIUS) {
+        distEl.classList.add('close');
+        statusEl.textContent = '✅ Jesteś na miejscu!';
+        statusEl.className = 'dist-status close';
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'linear-gradient(90deg, #22c55e, #4ade80)';
+
+        // Auto-popup modal (tylko raz)
+        if (!modalShown) {
+          modalShown = true;
+          showModal();
+        }
+      } else if (dist <= 200) {
+        distEl.classList.add('medium');
+        statusEl.textContent = '🔥 Blisko! Jeszcze ' + Math.round(dist - GEOFENCE_RADIUS) + ' m';
+        statusEl.className = 'dist-status';
+        const pct = Math.max(0, 100 - ((dist - GEOFENCE_RADIUS) / 170) * 100);
+        fillEl.style.width = pct + '%';
+        fillEl.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
+      } else {
+        distEl.classList.add('far');
+        statusEl.textContent = 'Idź w stronę biletu 🎟️';
+        statusEl.className = 'dist-status';
+        const pct = Math.max(5, 100 - (dist / 1000) * 100);
+        fillEl.style.width = pct + '%';
+        fillEl.style.background = 'linear-gradient(90deg, #64748b, #94a3b8)';
+      }
+    }
+
+    function showModal() {
+      document.getElementById('modalOverlay').classList.add('visible');
+    }
+
+    function dismissModal() {
+      document.getElementById('modalOverlay').classList.remove('visible');
+      // Pozwól ponownie pokazać modal jeśli uczestnik wyjdzie i wróci w promień
+      // (ale nie natychmiast — dopiero po wyjściu poza promień i powrocie)
+      modalShown = false;
+    }
+
+    function onPosition(pos) {
+      currentLat = pos.coords.latitude;
+      currentLng = pos.coords.longitude;
+      document.getElementById('gpsWarning').style.display = 'none';
+
+      updateUserMarker(currentLat, currentLng, pos.coords.accuracy);
+
+      const dist = haversine(currentLat, currentLng, TICKET_LAT, TICKET_LNG);
+      updateDistance(dist);
+    }
+
+    function onError(err) {
+      const warning = document.getElementById('gpsWarning');
+      const text = document.getElementById('gpsWarningText');
+      warning.style.display = 'block';
+
+      if (err.code === err.PERMISSION_DENIED) {
+        text.textContent = 'Dostęp do lokalizacji został odrzucony. Bez GPS nie możesz znaleźć biletu.';
+      } else if (err.code === err.POSITION_UNAVAILABLE) {
+        text.textContent = 'Nie udało się ustalić lokalizacji. Włącz GPS w telefonie.';
+      } else if (err.code === err.TIMEOUT) {
+        text.textContent = 'Upłynął czas oczekiwania na GPS. Spróbuj ponownie.';
+      } else {
+        text.textContent = 'Błąd lokalizacji: ' + err.message;
+      }
+
+      document.getElementById('distStatus').textContent = 'Oczekiwanie na GPS…';
+    }
+
+    function requestLocation() {
+      if (!navigator.geolocation) {
+        document.getElementById('gpsWarningText').textContent = 'Twoja przeglądarka nie obsługuje geolokalizacji.';
+        document.getElementById('gpsWarning').style.display = 'block';
+        return;
+      }
+
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+
+      watchId = navigator.geolocation.watchPosition(
+        onPosition,
+        onError,
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      );
+    }
+
+    function confirmFound() {
+      const btn = document.getElementById('receiveBtn');
+      btn.disabled = true;
+      btn.textContent = 'Sprawdzanie lokalizacji…';
+
+      if (currentLat == null || currentLng == null) {
+        alert('Nie udało się ustalić lokalizacji. Spróbuj ponownie.');
+        btn.disabled = false;
+        btn.textContent = '✅ Odebrałem bilet!';
+        return;
+      }
+
+      fetch('/api/found', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: currentLat, lng: currentLng })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert(data.message || 'Wystąpił błąd');
+          btn.disabled = false;
+          btn.textContent = '✅ Odebrałem bilet!';
+          modalShown = false; // pozwól spróbować ponownie po podejściu bliżej
+        }
+      })
+      .catch(() => {
+        alert('Błąd połączenia z serwerem');
+        btn.disabled = false;
+        btn.textContent = '✅ Odebrałem bilet!';
+      });
+    }
+
+    // Start
+    initMap();
+    requestLocation();
+  </script>
+  <% } %>
+</body>
+</html>

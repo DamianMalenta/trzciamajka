@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: trzciamajka
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false  # ustaw ręcznie w panelu Render
+      - key: SESSION_SECRET
+        generateValue: true  # Render wygeneruje losowy sekret
+      - key: NODE_VERSION
+        value: 20.0.0
