@@ -523,21 +523,51 @@
       warning.style.display = 'block';
     }
 
+    // Detekcja Brave — domyślnie blokuje geolokalizację przez Brave Shields.
+    // navigator.brave istnieje tylko w Brave; isBrave to Promise<boolean>.
+    function detectBrave() {
+      try {
+        if (navigator.brave && typeof navigator.brave.isBrave === 'function') {
+          return navigator.brave.isBrave();
+        }
+      } catch (_) {}
+      // Fallback: Brave nie wysyła „Brave” w UA, ale ma specyficzne ślady.
+      // Ten heurystyk nie jest 100% pewny, więc traktuj tylko jako wskazówkę.
+      return Promise.resolve(false);
+    }
+
+    function braveWarning() {
+      showGpsWarning(
+        'Używasz przeglądarki <b>Brave</b>, która domyślnie blokuje dostęp do lokalizacji przez „Brave Shields”.<br><br>' +
+        '<b>Aby odblokować:</b><br>' +
+        '1. Kliknij ikonę tarczy 🛡️ (lewy dolny róg paska adresu).<br>' +
+        '2. Wyłącz „Brave Shields” dla tej strony.<br>' +
+        '3. Odśwież stronę i kliknij „Akceptuj” w prompcie o lokalizację.<br><br>' +
+        'Bez GPS nie możesz znaleźć biletu.'
+      );
+    }
+
     function onError(err) {
       document.getElementById('gpsWarning').style.display = 'block';
 
       if (err.code === err.PERMISSION_DENIED) {
-        // Najczęstszy przypadek: Chrome zablokował stronę po wielokrotnym
-        // odrzuceniu uprawnień ("embargo"). Prompt się nie pojawi, dopóki
-        // użytkownik nie odblokuje lokalizacji ręcznie w ustawieniach.
-        showGpsWarning(
-          'Dostęp do lokalizacji został zablokowany przez przeglądarkę.<br><br>' +
-          '<b>Aby odblokować:</b><br>' +
-          '1. Kliknij ikonę 🔒 (lub ⚙️) po lewej stronie paska adresu.<br>' +
-          '2. Znajdź „Lokalizacja” i zmień na „Zezwól”.<br>' +
-          '3. Odśwież stronę.<br><br>' +
-          'Bez GPS nie możesz znaleźć biletu.'
-        );
+        // W Brave prompt się pojawia, ale po akceptacji Shields i tak blokuje
+        // API — dlatego najpierw sprawdzamy Brave.
+        detectBrave().then((isBrave) => {
+          if (isBrave) {
+            braveWarning();
+            return;
+          }
+          // Chrome/Edge: zablokowane po wielokrotnym odrzuceniu uprawnień.
+          showGpsWarning(
+            'Dostęp do lokalizacji został zablokowany przez przeglądarkę.<br><br>' +
+            '<b>Aby odblokować:</b><br>' +
+            '1. Kliknij ikonę 🔒 (lub ⚙️) po lewej stronie paska adresu.<br>' +
+            '2. Znajdź „Lokalizacja” i zmień na „Zezwól”.<br>' +
+            '3. Odśwież stronę.<br><br>' +
+            'Bez GPS nie możesz znaleźć biletu.'
+          );
+        });
       } else if (err.code === err.POSITION_UNAVAILABLE) {
         showGpsWarning('Nie udało się ustalić lokalizacji. Włącz GPS w telefonie i spróbuj ponownie.');
       } else if (err.code === err.TIMEOUT) {
@@ -567,27 +597,47 @@
         return;
       }
 
-      // 3. Sprawdź aktualny stan uprawnienia przed wywołaniem watchPosition.
-      // Jeśli jest już „denied”, nie ma sensu pokazywać promptu — od razu
-      // pokaż instrukcję odblokowania.
-      if (navigator.permissions && navigator.permissions.query) {
-        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-          if (result.state === 'denied') {
-            showGpsWarning(
-              'Dostęp do lokalizacji jest zablokowany w przeglądarce.<br><br>' +
-              '<b>Aby odblokować:</b><br>' +
-              '1. Kliknij ikonę 🔒 po lewej stronie paska adresu.<br>' +
-              '2. Znajdź „Lokalizacja” → „Zezwól”.<br>' +
-              '3. Odśwież stronę.<br><br>' +
-              'Bez GPS nie możesz znaleźć biletu.'
-            );
-            return;
+      // 3. W Brave sprawdź zanim wywołamy watchPosition — Shields blokuje
+      // API niezależnie od odpowiedzi użytkownika, więc prompt jest bez sensu.
+      detectBrave().then((isBrave) => {
+        if (isBrave) {
+          // Nie pokazuj od razu ostrzeżenia — daj szansę, że użytkownik już
+          // wyłączył Shields. Jeśli watchPosition zawiedzie, onError() pokaże
+          // instrukcję Brave. Najpierw więc sprawdź stan uprawnienia.
+          if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+              if (result.state === 'denied') {
+                braveWarning();
+                return;
+              }
+              startWatch();
+            }).catch(startWatch);
+          } else {
+            startWatch();
           }
+          return;
+        }
+
+        // 4. Nie-Brave: sprawdź stan uprawnienia przed watchPosition.
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+            if (result.state === 'denied') {
+              showGpsWarning(
+                'Dostęp do lokalizacji jest zablokowany w przeglądarce.<br><br>' +
+                '<b>Aby odblokować:</b><br>' +
+                '1. Kliknij ikonę 🔒 po lewej stronie paska adresu.<br>' +
+                '2. Znajdź „Lokalizacja” → „Zezwól”.<br>' +
+                '3. Odśwież stronę.<br><br>' +
+                'Bez GPS nie możesz znaleźć biletu.'
+              );
+              return;
+            }
+            startWatch();
+          }).catch(startWatch);
+        } else {
           startWatch();
-        }).catch(startWatch); // fallback jeśli query() rzuci wyjątek
-      } else {
-        startWatch();
-      }
+        }
+      });
 
       function startWatch() {
         if (watchId !== null) navigator.geolocation.clearWatch(watchId);
