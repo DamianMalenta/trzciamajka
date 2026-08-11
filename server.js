@@ -165,7 +165,13 @@ app.get('/', (req, res) => {
   });
 });
 
-/** Uczestnik potwierdza znalezienie swojego biletu. */
+/** Uczestnik potwierdza znalezienie swojego biletu.
+ *
+ *  Obsługiwane metody weryfikacji (wystarczy JEDNA):
+ *    1. GPS  — { lat, lng } w promieniu GEOFENCE_RADIUS od biletu (główna metoda)
+ *    2. KOD  — { code } zgodny z ticket.code (alternatywa gdy GPS niedostępny,
+ *              np. Brave z włączonymi Shields)
+ */
 app.post('/api/found', (req, res) => {
   const tickets = loadTickets() || [];
   const id = req.session.assignedTicketId;
@@ -183,11 +189,34 @@ app.post('/api/found', (req, res) => {
     return res.json({ success: false, message: 'Ten bilet został już odnaleziony przez kogoś innego.' });
   }
 
-  // Walidacja odległości po stronie serwera (zabezpieczenie przed oszustwem).
-  const { lat: userLat, lng: userLng } = req.body || {};
+  const { lat: userLat, lng: userLng, code } = req.body || {};
+
+  // --- Metoda 2: kod z biletu (alternatywa gdy GPS nie działa) ---
+  if (typeof code === 'string' && code.trim()) {
+    const expected = String(ticket.code || '').trim().toUpperCase();
+    const provided = code.trim().toUpperCase();
+
+    if (!expected) {
+      return res.json({ success: false, message: 'Ten bilet nie ma ustawionego kodu. Skontaktuj się z organizatorem.' });
+    }
+    if (provided !== expected) {
+      return res.json({ success: false, message: 'Nieprawidłowy kod. Sprawdź kod na bilecie i spróbuj ponownie.' });
+    }
+    // Kod OK — oznacz bilet jako znaleziony.
+    ticket.is_found = true;
+    req.session.foundConfirmed = true;
+    saveTickets(tickets);
+    githubSync.enqueueCommit(`Bilet #${ticket.id} odebrany kodem [auto]`).catch(() => {});
+    return res.json({ success: true, method: 'code' });
+  }
+
+  // --- Metoda 1: GPS (główna) ---
   if (typeof userLat !== 'number' || typeof userLng !== 'number' ||
       !isFinite(userLat) || !isFinite(userLng)) {
-    return res.json({ success: false, message: 'Brak lokalizacji. Zezwól na dostęp do GPS.' });
+    return res.json({
+      success: false,
+      message: 'Brak lokalizacji. Zezwól na dostęp do GPS lub wpisz kod z biletu.',
+    });
   }
 
   const distance = haversine(userLat, userLng, ticket.lat, ticket.lng);
@@ -196,7 +225,7 @@ app.post('/api/found', (req, res) => {
   if (distance > GEOFENCE_RADIUS) {
     return res.json({
       success: false,
-      message: `Jesteś ${Math.round(distance)} m od biletu. Podejdź bliżej (max ${GEOFENCE_RADIUS} m).`,
+      message: `Jesteś ${Math.round(distance)} m od biletu. Podejdź bliżej (max ${GEOFENCE_RADIUS} m) lub wpisz kod z biletu.`,
       distance: Math.round(distance),
     });
   }
@@ -205,11 +234,8 @@ app.post('/api/found', (req, res) => {
   ticket.is_found = true;
   req.session.foundConfirmed = true;
   saveTickets(tickets);
-
-  // Auto-commit do GitHub (trwała zmiana, Render auto-redeploy)
   githubSync.enqueueCommit(`Bilet #${ticket.id} odebrany przez uczestnika [auto]`).catch(() => {});
-
-  res.json({ success: true, distance: Math.round(distance) });
+  res.json({ success: true, method: 'gps', distance: Math.round(distance) });
 });
 
 // --- Panel admina ------------------------------------------------------------
@@ -284,6 +310,30 @@ app.post('/admin/hint/:id', requireAdmin, (req, res) => {
   saveTickets(tickets);
   githubSync.enqueueCommit(`Admin: wskazówka biletu #${id}`).catch(() => {});
   res.json({ success: true });
+});
+
+app.post('/admin/code/:id', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const tickets = loadTickets() || [];
+  const ticket = tickets.find((t) => t.id === id);
+  if (!ticket) return res.json({ success: false, message: 'Bilet nie istnieje' });
+
+  const { code } = req.body || {};
+  if (typeof code !== 'string' || !code.trim()) {
+    return res.json({ success: false, message: 'Kod nie może być pusty' });
+  }
+
+  // Normalizuj do wielkich liter i sprawdź unikalność.
+  const normalized = code.trim().toUpperCase();
+  const conflict = tickets.find((t) => t.id !== id && String(t.code || '').toUpperCase() === normalized);
+  if (conflict) {
+    return res.json({ success: false, message: `Kod „${normalized}” jest już użyty przez bilet #${conflict.id}` });
+  }
+
+  ticket.code = normalized;
+  saveTickets(tickets);
+  githubSync.enqueueCommit(`Admin: kod biletu #${id}`).catch(() => {});
+  res.json({ success: true, code: ticket.code });
 });
 
 // --- Start -------------------------------------------------------------------

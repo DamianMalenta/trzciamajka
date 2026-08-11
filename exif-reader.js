@@ -5,6 +5,28 @@ const exifr = require('exifr');
 const ZDJECIA_DIR = path.join(__dirname, 'zdjecia');
 const TICKETS_FILE = path.join(__dirname, 'tickets.json');
 
+// Alfabet bez ambiguicznych znaków (bez 0/O, 1/I/L, U, S, Z).
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRTVWXY23456789';
+
+/** Generuje 4-znakowy kod do wpisania na biletach (np. „K7M2”). */
+function generateCode(length = 4) {
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+/** Zwraca kod unikalny względem istniejących biletów (sprawdza kolizje). */
+function uniqueCode(existingTickets) {
+  const used = new Set((existingTickets || []).map((t) => t.code).filter(Boolean));
+  let code;
+  do {
+    code = generateCode();
+  } while (used.has(code));
+  return code;
+}
+
 function convertDMSToDD(dms, ref) {
   if (!dms) return null;
   const { degrees, minutes, seconds } = dms;
@@ -79,6 +101,7 @@ async function generateTickets() {
       lat: coords ? coords.lat : null,
       lng: coords ? coords.lng : null,
       hint_text: `Bilet #${i + 1} — znajdź miejsce ze zdjęcia!`,
+      code: uniqueCode(tickets),
       is_found: false
     };
 
@@ -108,7 +131,7 @@ function saveTickets(tickets) {
   fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2));
 }
 
-module.exports = { generateTickets, loadTickets, saveTickets };
+module.exports = { generateTickets, loadTickets, saveTickets, generateCode, uniqueCode };
 
 // CLI: uruchom bezpośrednio, aby (re)generować tickets.json ze zdjęć.
 if (require.main === module) {

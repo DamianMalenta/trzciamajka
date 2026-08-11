@@ -199,6 +199,13 @@
       color: #f87171;
       font-size: 0.8rem;
     }
+    .code-display {
+      color: #fbbf24;
+      font-weight: 800;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.2em;
+      font-size: 1rem;
+    }
 
     .gps-row {
       display: flex;
@@ -270,6 +277,12 @@
               <div class="info-row"><strong>Wskazówka:</strong></div>
               <input type="text" class="hint-input" id="hint-<%= ticket.id %>" value="<%= ticket.hint_text %>" />
               <button class="save-hint" onclick="saveHint(<%= ticket.id %>)">Zapisz wskazówkę</button>
+
+              <div class="info-row"><strong>Kod do odbioru:</strong> <span class="code-display"><%= ticket.code || '— brak —' %></span></div>
+              <div class="gps-row">
+                <input type="text" class="gps-input" id="code-<%= ticket.id %>" placeholder="np. K7M2" maxlength="4" value="<%= ticket.code || '' %>" style="text-transform:uppercase; letter-spacing:0.2em; width:120px;" />
+                <button class="save-gps" onclick="saveCode(<%= ticket.id %>)">Zapisz kod</button>
+              </div>
             </div>
           </div>
           <div class="ticket-item-footer">
@@ -380,6 +393,28 @@
           const orig = btn.textContent;
           btn.textContent = '✅ Zapisano!';
           setTimeout(() => btn.textContent = orig, 2000);
+        } else {
+          alert('Błąd: ' + data.message);
+        }
+      });
+    }
+
+    function saveCode(id) {
+      const code = document.getElementById(`code-${id}`).value;
+      fetch(`/admin/code/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const btn = event.target;
+          const orig = btn.textContent;
+          btn.textContent = '✅ Zapisano!';
+          setTimeout(() => btn.textContent = orig, 2000);
+          // Odśwież, żeby pokazać znormalizowany kod (wielkie litery).
+          setTimeout(() => location.reload(), 800);
         } else {
           alert('Błąd: ' + data.message);
         }

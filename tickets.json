@@ -6,6 +6,7 @@
     "lat": 53.039014,
     "lng": 16.460474,
     "hint_text": "Bilet #1 — znajdź miejsce ze zdjęcia!",
+    "code": "K7M2",
     "is_found": false
   },
   {
@@ -15,6 +16,7 @@
     "lat": 53.041726,
     "lng": 16.458021,
     "hint_text": "Bilet #2 — znajdź miejsce ze zdjęcia!",
+    "code": "X9PQ",
     "is_found": false
   },
   {
@@ -24,6 +26,7 @@
     "lat": 53.057082622254164,
     "lng": 16.458302583634428,
     "hint_text": "Bilet #3 — znajdź miejsce ze zdjęcia!",
+    "code": "R4HK",
     "is_found": false
   },
   {
@@ -33,6 +36,7 @@
     "lat": 53.05859994452503,
     "lng": 16.463822269149727,
     "hint_text": "Bilet #4 — znajdź miejsce ze zdjęcia!",
+    "code": "T8NE",
     "is_found": false
   },
   {
@@ -42,6 +46,7 @@
     "lat": 53.042965029211786,
     "lng": 16.461328484285765,
     "hint_text": "Bilet #5 — znajdź miejsce ze zdjęcia!",
+    "code": "M3VW",
     "is_found": false
   },
   {
@@ -51,6 +56,7 @@
     "lat": 53.04073372225498,
     "lng": 16.467256036538107,
     "hint_text": "Bilet #6 — znajdź miejsce ze zdjęcia!",
+    "code": "P5CY",
     "is_found": false
   }
 ]

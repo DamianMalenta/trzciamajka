@@ -178,6 +178,52 @@
     }
     .gps-warning button:hover { background: rgba(248,113,113,0.15); }
 
+    /* --- Przycisk „Mam kod z biletu” (alternatywa dla GPS) --- */
+    .btn-code-alt {
+      width: 100%;
+      padding: 12px;
+      margin-top: 12px;
+      border: 1px solid rgba(251,191,36,0.3);
+      border-radius: 10px;
+      background: transparent;
+      color: #fbbf24;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-code-alt:hover {
+      background: rgba(251,191,36,0.1);
+      border-color: rgba(251,191,36,0.5);
+    }
+
+    /* --- Input na kod w modalu --- */
+    .code-input {
+      width: 100%;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 2px solid rgba(251,191,36,0.3);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.8);
+      color: #fbbf24;
+      font-size: 1.8rem;
+      font-weight: 800;
+      text-align: center;
+      letter-spacing: 0.4em;
+      text-transform: uppercase;
+      font-family: 'Courier New', monospace;
+    }
+    .code-input:focus {
+      outline: none;
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 3px rgba(251,191,36,0.15);
+    }
+    .code-input::placeholder {
+      color: rgba(251,191,36,0.3);
+      letter-spacing: 0.2em;
+      font-weight: 400;
+    }
+
     /* --- Modal „Odebrałem bilet” --- */
     .modal-overlay {
       position: fixed;
@@ -350,10 +396,14 @@
         <div class="closeness-bar">
           <div class="closeness-fill" id="closenessFill"></div>
         </div>
+
+        <button class="btn-code-alt" onclick="openCodeModal()">
+          🔑 Mam kod z biletu (alternatywa)
+        </button>
       </div>
     </div>
 
-    <!-- Modal „Odebrałem bilet” -->
+    <!-- Modal „Odebrałem bilet” (GPS) -->
     <div class="modal-overlay" id="modalOverlay">
       <div class="modal">
         <div class="icon">🎉</div>
@@ -364,6 +414,22 @@
         </button>
         <button class="btn-dismiss" onclick="dismissModal()">
           Jeszcze nie, szukam dalej
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal „Wpisz kod z biletu” (alternatywa gdy GPS nie działa) -->
+    <div class="modal-overlay" id="codeModalOverlay">
+      <div class="modal">
+        <div class="icon">🔑</div>
+        <h2>Wpisz kod z biletu</h2>
+        <p>Nie działa GPS? Znajdź bilet w miejscu ze zdjęcia<br>i przepisz 4-znakowy kod z niego.</p>
+        <input type="text" id="codeInput" class="code-input" maxlength="4" placeholder="np. K7M2" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" />
+        <button class="btn-receive" id="codeBtn" onclick="confirmByCode()">
+          ✅ Potwierdź kod
+        </button>
+        <button class="btn-dismiss" onclick="dismissCodeModal()">
+          Anuluj
         </button>
       </div>
     </div>
@@ -681,6 +747,53 @@
         alert('Błąd połączenia z serwerem');
         btn.disabled = false;
         btn.textContent = '✅ Odebrałem bilet!';
+      });
+    }
+
+    // --- Alternatywna weryfikacja kodem (gdy GPS nie działa, np. Brave) ---
+    function openCodeModal() {
+      document.getElementById('codeModalOverlay').classList.add('visible');
+      const input = document.getElementById('codeInput');
+      input.value = '';
+      setTimeout(() => input.focus(), 100);
+    }
+
+    function dismissCodeModal() {
+      document.getElementById('codeModalOverlay').classList.remove('visible');
+    }
+
+    function confirmByCode() {
+      const btn = document.getElementById('codeBtn');
+      const input = document.getElementById('codeInput');
+      const code = input.value.trim();
+
+      if (!code) {
+        alert('Wpisz 4-znakowy kod z biletu.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sprawdzanie kodu…';
+
+      fetch('/api/found', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert(data.message || 'Wystąpił błąd');
+          btn.disabled = false;
+          btn.textContent = '✅ Potwierdź kod';
+        }
+      })
+      .catch(() => {
+        alert('Błąd połączenia z serwerem');
+        btn.disabled = false;
+        btn.textContent = '✅ Potwierdź kod';
       });
     }
 
