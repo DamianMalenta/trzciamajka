@@ -7,7 +7,12 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node exif-reader.js",
-    "dev": "node exif-reader.js && node server.js"
+    "dev": "node exif-reader.js && node server.js",
+    "status": "node manage.js status",
+    "found": "node manage.js found",
+    "free": "node manage.js free",
+    "found-all": "node manage.js found-all",
+    "free-all": "node manage.js free-all"
   },
   "keywords": [],
   "author": "",
