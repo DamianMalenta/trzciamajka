@@ -178,6 +178,30 @@
     }
     .gps-warning button:hover { background: rgba(248,113,113,0.15); }
 
+    /* --- Przycisk „Włącz lokalizację” (zamiast auto-żądania) --- */
+    .btn-gps-start {
+      width: 100%;
+      padding: 16px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-gps-start:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(59,130,246,0.4);
+    }
+    .btn-gps-start:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     /* --- Przycisk „Mam kod z biletu” (alternatywa dla GPS) --- */
     .btn-code-alt {
       width: 100%;
@@ -386,14 +410,21 @@
           </div>
         </div>
 
-        <div class="distance-row">
+        <!-- Przycisk włączania GPS — MUSI być kliknięty przez użytkownika,
+             inaczej Chrome/Edge/Brave auto-blokują uprawnienie jako
+             "abusive prompt" (żądanie bez gestu użytkownika). -->
+        <button class="btn-gps-start" id="gpsStartBtn" onclick="requestLocation()">
+          📍 Włącz lokalizację, aby znaleźć bilet
+        </button>
+
+        <div class="distance-row" id="distanceRow" style="display:none;">
           <div class="dist-block">
             <span class="dist-label">Odległość</span>
             <span class="dist-value far" id="distValue">—</span>
           </div>
           <span class="dist-status" id="distStatus">Łączenie z GPS…</span>
         </div>
-        <div class="closeness-bar">
+        <div class="closeness-bar" id="closenessBar" style="display:none;">
           <div class="closeness-fill" id="closenessFill"></div>
         </div>
 
@@ -576,6 +607,10 @@
       currentLng = pos.coords.longitude;
       document.getElementById('gpsWarning').style.display = 'none';
 
+      // Ukryj przycisk start — GPS działa, nie potrzebny już.
+      const startBtn = document.getElementById('gpsStartBtn');
+      if (startBtn) startBtn.style.display = 'none';
+
       updateUserMarker(currentLat, currentLng, pos.coords.accuracy);
 
       const dist = haversine(currentLat, currentLng, TICKET_LAT, TICKET_LNG);
@@ -643,12 +678,25 @@
       }
 
       document.getElementById('distStatus').textContent = 'Oczekiwanie na GPS…';
+      // Przywróć przycisk start, żeby użytkownik mógł spróbować ponownie.
+      const startBtn = document.getElementById('gpsStartBtn');
+      if (startBtn) { startBtn.disabled = false; startBtn.textContent = '📍 Spróbuj ponownie'; }
     }
 
     function requestLocation() {
+      // Ukryj przycisk start i pokaż panel odległości.
+      const startBtn = document.getElementById('gpsStartBtn');
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Łączenie z GPS…';
+      }
+      document.getElementById('distanceRow').style.display = 'flex';
+      document.getElementById('closenessBar').style.display = 'block';
+
       // 1. Sprawdź czy przeglądarka wspiera geolokalizację.
       if (!navigator.geolocation) {
         showGpsWarning('Twoja przeglądarka nie obsługuje geolokalizacji.');
+        if (startBtn) { startBtn.disabled = false; startBtn.textContent = '📍 Włącz lokalizację, aby znaleźć bilet'; }
         return;
       }
 
@@ -797,9 +845,11 @@
       });
     }
 
-    // Start
+    // Start — NIE wywołujemy requestLocation() automatycznie!
+    // Nowoczesne przeglądarki (Chrome, Edge, Brave) auto-blokują uprawnienia
+    // żądane bez gestu użytkownika (tzw. "abusive prompt protection").
+    // Użytkownik musi kliknąć przycisk „Włącz lokalizację”.
     initMap();
-    requestLocation();
   </script>
   <% } %>
 </body>
