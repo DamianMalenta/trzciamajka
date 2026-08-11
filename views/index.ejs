@@ -516,38 +516,87 @@
       updateDistance(dist);
     }
 
-    function onError(err) {
+    function showGpsWarning(htmlText) {
       const warning = document.getElementById('gpsWarning');
       const text = document.getElementById('gpsWarningText');
+      text.innerHTML = htmlText;
       warning.style.display = 'block';
+    }
+
+    function onError(err) {
+      document.getElementById('gpsWarning').style.display = 'block';
 
       if (err.code === err.PERMISSION_DENIED) {
-        text.textContent = 'Dostęp do lokalizacji został odrzucony. Bez GPS nie możesz znaleźć biletu.';
+        // Najczęstszy przypadek: Chrome zablokował stronę po wielokrotnym
+        // odrzuceniu uprawnień ("embargo"). Prompt się nie pojawi, dopóki
+        // użytkownik nie odblokuje lokalizacji ręcznie w ustawieniach.
+        showGpsWarning(
+          'Dostęp do lokalizacji został zablokowany przez przeglądarkę.<br><br>' +
+          '<b>Aby odblokować:</b><br>' +
+          '1. Kliknij ikonę 🔒 (lub ⚙️) po lewej stronie paska adresu.<br>' +
+          '2. Znajdź „Lokalizacja” i zmień na „Zezwól”.<br>' +
+          '3. Odśwież stronę.<br><br>' +
+          'Bez GPS nie możesz znaleźć biletu.'
+        );
       } else if (err.code === err.POSITION_UNAVAILABLE) {
-        text.textContent = 'Nie udało się ustalić lokalizacji. Włącz GPS w telefonie.';
+        showGpsWarning('Nie udało się ustalić lokalizacji. Włącz GPS w telefonie i spróbuj ponownie.');
       } else if (err.code === err.TIMEOUT) {
-        text.textContent = 'Upłynął czas oczekiwania na GPS. Spróbuj ponownie.';
+        showGpsWarning('Upłynął czas oczekiwania na GPS. Spróbuj ponownie.');
       } else {
-        text.textContent = 'Błąd lokalizacji: ' + err.message;
+        showGpsWarning('Błąd lokalizacji: ' + err.message);
       }
 
       document.getElementById('distStatus').textContent = 'Oczekiwanie na GPS…';
     }
 
     function requestLocation() {
+      // 1. Sprawdź czy przeglądarka wspiera geolokalizację.
       if (!navigator.geolocation) {
-        document.getElementById('gpsWarningText').textContent = 'Twoja przeglądarka nie obsługuje geolokalizacji.';
-        document.getElementById('gpsWarning').style.display = 'block';
+        showGpsWarning('Twoja przeglądarka nie obsługuje geolokalizacji.');
         return;
       }
 
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      // 2. Sprawdź czy jesteśmy w secure context (HTTPS lub localhost).
+      // Geolocation API nie działa na zwykłym HTTP — to częsta przyczyna
+      // komunikatu „ta strona nie może prosić o Twoją lokalizację”.
+      if (!window.isSecureContext) {
+        showGpsWarning(
+          'Lokalizacja działa tylko na połączeniu HTTPS (lub localhost). ' +
+          'Obecna strona jest ładowana przez HTTP — otwórz ją przez HTTPS.'
+        );
+        return;
+      }
 
-      watchId = navigator.geolocation.watchPosition(
-        onPosition,
-        onError,
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
-      );
+      // 3. Sprawdź aktualny stan uprawnienia przed wywołaniem watchPosition.
+      // Jeśli jest już „denied”, nie ma sensu pokazywać promptu — od razu
+      // pokaż instrukcję odblokowania.
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+          if (result.state === 'denied') {
+            showGpsWarning(
+              'Dostęp do lokalizacji jest zablokowany w przeglądarce.<br><br>' +
+              '<b>Aby odblokować:</b><br>' +
+              '1. Kliknij ikonę 🔒 po lewej stronie paska adresu.<br>' +
+              '2. Znajdź „Lokalizacja” → „Zezwól”.<br>' +
+              '3. Odśwież stronę.<br><br>' +
+              'Bez GPS nie możesz znaleźć biletu.'
+            );
+            return;
+          }
+          startWatch();
+        }).catch(startWatch); // fallback jeśli query() rzuci wyjątek
+      } else {
+        startWatch();
+      }
+
+      function startWatch() {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = navigator.geolocation.watchPosition(
+          onPosition,
+          onError,
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+        );
+      }
     }
 
     function confirmFound() {

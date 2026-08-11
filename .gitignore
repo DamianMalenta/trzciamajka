@@ -12,6 +12,7 @@ compress-photos.js
 
 # Tymczasowe pliki testowe
 test-*.js
+test-render.js
 tmp.*
 
 # System / IDE

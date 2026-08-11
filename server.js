@@ -59,6 +59,16 @@ app.use(
 // Serwowanie zdjęć pod /zdjecia/... (zgodnie z photo_path w tickets.json)
 app.use('/zdjecia', express.static(PHOTOS_DIR));
 
+// Jawne zezwolenie na geolokalizację — niektóre przeglądarki wymagają tego
+// nagłówka, żeby w ogóle pokazać prompt o lokalizację na zewnętrznym hostingu.
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'geolocation=(self)');
+  // Pozwól osadzać własną stronę w iframe'ach tylko z tego samego originu
+  // (zapobiega problemom z geolokalizacją w kontekście iframe).
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 // --- Pomocnicze --------------------------------------------------------------
 
 /** Bilety dostępne do losowania: nieodnalezione i z poprawnymi współrzędnymi. */
