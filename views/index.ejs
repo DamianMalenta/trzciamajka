@@ -357,6 +357,76 @@
       text-align: center;
       line-height: 36px;
     }
+
+    /* --- Linia trasy (od użytkownika do biletu) --- */
+    .route-line {
+      color: #fbbf24;
+      weight: 3;
+      opacity: 0.7;
+      dashArray: '8 8';
+    }
+
+    /* --- Strzałki kierunkowe na linii trasy --- */
+    .route-arrow-icon {
+      font-size: 1.1rem;
+      color: #fbbf24;
+      text-align: center;
+      line-height: 18px;
+      width: 18px;
+      height: 18px;
+      text-shadow: 0 0 4px rgba(15,23,42,0.9);
+      pointer-events: none;
+    }
+
+    /* --- Okruszki (breadcrumb historii pozycji) --- */
+    .breadcrumb-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #3b82f6;
+      border: 1.5px solid rgba(255,255,255,0.8);
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    /* --- Przycisk „centruj na mnie" obok zoomu --- */
+    .leaflet-control-locate {
+      margin-bottom: 10px !important;
+    }
+    .locate-btn {
+      width: 38px;
+      height: 38px;
+      line-height: 38px;
+      font-size: 1.2rem;
+      text-align: center;
+      background: #fff;
+      color: #3b82f6;
+      border: 2px solid rgba(59,130,246,0.4);
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      transition: transform 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .locate-btn:hover {
+      background: #eff6ff;
+      transform: translateY(-1px);
+    }
+    .locate-btn:active { transform: translateY(0); }
+
+    /* --- ETA w dolnym panelu --- */
+    .eta-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .eta-row .eta-value {
+      color: #cbd5e1;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -427,6 +497,10 @@
         <div class="closeness-bar" id="closenessBar" style="display:none;">
           <div class="closeness-fill" id="closenessFill"></div>
         </div>
+        <div class="eta-row" id="etaRow" style="display:none;">
+          <span>🚶 Pieszo:</span>
+          <span class="eta-value" id="etaValue">—</span>
+        </div>
 
         <button class="btn-code-alt" onclick="openCodeModal()">
           🔑 Mam kod z biletu (alternatywa)
@@ -473,12 +547,21 @@
     const TICKET_LNG = <%= ticket.lng %>;
     const GEOFENCE_RADIUS = 30;   // metry — promień odbioru biletu
     const BLUR_RADIUS = 100;      // metry — promień rozmytego kółka wokół biletu
+    const ARROW_SPACING_METERS = 40;  // co ile metrów na linii pojawić się ma strzałka kierunkowa
+    const BREADCRUMB_MAX = 30;        // ile ostatnich pozycji zapamiętać (ślad „okruszków")
+    const BREADCRUMB_MIN_DIST_M = 8;  // ignoruj odczyty bliżej niż X m od ostatniego okruszka (eliminuje szum GPS)
+    const WALK_SPEED_KMH = 5;         // założenie prędkości piesza do ETA
 
     let map = null;
     let userMarker = null;
     let userAccuracyCircle = null;
     let ticketMarker = null;
     let ticketBlurCircle = null;
+    let routeLine = null;          // L.polyline: użytkownik → bilet
+    let routeArrowMarkers = [];    // warstwy strzałek kierunkowych na linii
+    let breadcrumbLine = null;     // L.polyline: ślad historii pozycji
+    let breadcrumbDots = [];       // warstwy okruszków (małe kropki)
+    let breadcrumbHistory = [];    // [{lat,lng}] ostatnich pozycji
     let watchId = null;
     let currentLat = null;
     let currentLng = null;
@@ -498,6 +581,137 @@
       return (m / 1000).toFixed(2) + ' km';
     }
 
+    // Kąt bearing (0=N, 90=E, 180=S, 270=W) od punktu A do B.
+    function bearing(lat1, lng1, lat2, lng2) {
+      const toRad = d => d * Math.PI / 180;
+      const toDeg = r => r * 180 / Math.PI;
+      const φ1 = toRad(lat1), φ2 = toRad(lat2);
+      const Δλ = toRad(lng2 - lng1);
+      const y = Math.sin(Δλ) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    // Interpolacja punktów wzdłuż linii geograficznej (przybliżenie equirectangular,
+    // wystarczające dla dystansów < 1 km). Zwraca tablicę {lat,lng,frac} dla punktów
+    // oddalonych o `spacingM` metrów od startu, z pominięciem końców.
+    function interpolateRoute(lat1, lng1, lat2, lng2, spacingM) {
+      const total = haversine(lat1, lng1, lat2, lng2);
+      if (total <= spacingM * 1.5) return [];
+      const steps = Math.floor(total / spacingM);
+      const pts = [];
+      for (let i = 1; i < steps; i++) {
+        const dFromStart = i * spacingM;
+        const frac = dFromStart / total;
+        const lat = lat1 + (lat2 - lat1) * frac;
+        const lng = lng1 + (lng2 - lng1) * frac;
+        pts.push({ lat, lng, frac });
+      }
+      return pts;
+    }
+
+    // Strzałka kierunkowa jako divIcon obrócona o `deg` (bearing).
+    function makeArrowIcon(deg) {
+      return L.divIcon({
+        className: '',
+        html: '<div class="route-arrow-icon" style="transform: rotate(' + deg + 'deg);">➤</div>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      });
+    }
+
+    function makeBreadcrumbIcon() {
+      return L.divIcon({
+        className: '',
+        html: '<div class="breadcrumb-dot"></div>',
+        iconSize: [7, 7],
+        iconAnchor: [3.5, 3.5],
+      });
+    }
+
+    // Rysuje/aktualizuje linię trasy od użytkownika do biletu oraz strzałki kierunkowe.
+    function updateRouteLine(lat, lng) {
+      const from = [lat, lng];
+      const to = [TICKET_LAT, TICKET_LNG];
+
+      if (!routeLine) {
+        routeLine = L.polyline([from, to], {
+          color: '#fbbf24',
+          weight: 3,
+          opacity: 0.7,
+          dashArray: '8 8',
+        }).addTo(map);
+      } else {
+        routeLine.setLatLngs([from, to]);
+      }
+
+      // Wyczyść stare strzałki
+      routeArrowMarkers.forEach(m => map.removeLayer(m));
+      routeArrowMarkers = [];
+
+      // Dodaj strzałki wzdłuż linii (pomijamy, gdy bardzo blisko — wtedy linia jest krótka)
+      const pts = interpolateRoute(lat, lng, TICKET_LAT, TICKET_LNG, ARROW_SPACING_METERS);
+      const baseBearing = bearing(lat, lng, TICKET_LAT, TICKET_LNG);
+      pts.forEach(p => {
+        const m = L.marker([p.lat, p.lng], {
+          icon: makeArrowIcon(baseBearing),
+          interactive: false,
+          keyboard: false,
+        }).addTo(map);
+        routeArrowMarkers.push(m);
+      });
+    }
+
+    // Dodaje nowy „okruszek" do śladu, jeśli ruch > BREADCRUMB_MIN_DIST_M.
+    function pushBreadcrumb(lat, lng) {
+      const last = breadcrumbHistory[breadcrumbHistory.length - 1];
+      if (last) {
+        const d = haversine(last.lat, last.lng, lat, lng);
+        if (d < BREADCRUMB_MIN_DIST_M) return; // szum GPS — pomiń
+      }
+      breadcrumbHistory.push({ lat, lng });
+      if (breadcrumbHistory.length > BREADCRUMB_MAX) {
+        breadcrumbHistory.shift();
+      }
+      redrawBreadcrumbs();
+    }
+
+    function redrawBreadcrumbs() {
+      breadcrumbDots.forEach(m => map.removeLayer(m));
+      breadcrumbDots = [];
+      if (breadcrumbLine) { map.removeLayer(breadcrumbLine); breadcrumbLine = null; }
+
+      if (breadcrumbHistory.length < 2) return;
+
+      // Cienka linia łącząca okruszki
+      const latlngs = breadcrumbHistory.map(p => [p.lat, p.lng]);
+      breadcrumbLine = L.polyline(latlngs, {
+        color: '#3b82f6',
+        weight: 2,
+        opacity: 0.35,
+        dashArray: '2 6',
+      }).addTo(map);
+
+      // Kropki w historii (z pominięciem ostatniego punktu — tam jest marker użytkownika)
+      for (let i = 0; i < breadcrumbHistory.length - 1; i++) {
+        const p = breadcrumbHistory[i];
+        const m = L.marker([p.lat, p.lng], {
+          icon: makeBreadcrumbIcon(),
+          interactive: false,
+          keyboard: false,
+        }).addTo(map);
+        breadcrumbDots.push(m);
+      }
+    }
+
+    // ETA w minutach (pieszo, ~5 km/h).
+    function formatETA(meters) {
+      const metersPerMin = (WALK_SPEED_KMH * 1000) / 60;
+      const mins = meters / metersPerMin;
+      if (mins < 1) return '< 1 min';
+      return '~' + Math.round(mins) + ' min';
+    }
+
     function initMap() {
       map = L.map('map', { zoomControl: false, attributionControl: false }).setView([TICKET_LAT, TICKET_LNG], 14);
 
@@ -506,6 +720,27 @@
       }).addTo(map);
 
       L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      // Przycisk „centruj na mnie" — dodany nad kontrolką zoomu (bottom-right).
+      const locateControl = L.control({ position: 'bottomright' });
+      locateControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control-locate');
+        const btn = L.DomUtil.create('div', 'locate-btn', div);
+        btn.textContent = '📍';
+        btn.title = 'Centruj mapę na mojej pozycji';
+        L.DomEvent.on(btn, 'click', function (ev) {
+          L.DomEvent.stopPropagation(ev);
+          if (currentLat != null && currentLng != null) {
+            map.setView([currentLat, currentLng], 16, { animate: true });
+          } else {
+            // Brak pozycji — krótkie zasygnalizowanie.
+            btn.style.background = '#fee2e2';
+            setTimeout(() => { btn.style.background = ''; }, 600);
+          }
+        });
+        return div;
+      };
+      locateControl.addTo(map);
 
       // Pinezka biletu
       const ticketIcon = L.divIcon({
@@ -552,15 +787,22 @@
         userAccuracyCircle.setLatLng(latlng);
         if (accuracy) userAccuracyCircle.setRadius(accuracy);
       }
+
+      // Rysuj linię trasy (ze strzałkami) oraz dodaj okruszek do śladu historii.
+      updateRouteLine(lat, lng);
+      pushBreadcrumb(lat, lng);
     }
 
     function updateDistance(dist) {
       const distEl = document.getElementById('distValue');
       const statusEl = document.getElementById('distStatus');
       const fillEl = document.getElementById('closenessFill');
+      const etaEl = document.getElementById('etaValue');
 
       distEl.textContent = formatDistance(dist);
       distEl.className = 'dist-value';
+
+      if (etaEl) etaEl.textContent = formatETA(dist);
 
       if (dist <= GEOFENCE_RADIUS) {
         distEl.classList.add('close');
@@ -692,6 +934,7 @@
       }
       document.getElementById('distanceRow').style.display = 'flex';
       document.getElementById('closenessBar').style.display = 'block';
+      document.getElementById('etaRow').style.display = 'flex';
 
       // 1. Sprawdź czy przeglądarka wspiera geolokalizację.
       if (!navigator.geolocation) {
