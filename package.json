@@ -12,7 +12,8 @@
     "found": "node manage.js found",
     "free": "node manage.js free",
     "found-all": "node manage.js found-all",
-    "free-all": "node manage.js free-all"
+    "free-all": "node manage.js free-all",
+    "dashboard": "node dashboard.js"
   },
   "keywords": [],
   "author": "",

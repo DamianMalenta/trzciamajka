@@ -10,6 +10,12 @@ services:
     envVars:
       - key: ADMIN_PASSWORD
         sync: false  # ustaw ręcznie w panelu Render
+      - key: GITHUB_TOKEN
+        sync: false  # ustaw ręcznie — Personal Access Token z uprawnieniem repo
+      - key: GITHUB_OWNER
+        value: DamianMalenta
+      - key: GITHUB_REPO
+        value: trzciamajka
       - key: SESSION_SECRET
         generateValue: true  # Render wygeneruje losowy sekret
       - key: NODE_VERSION

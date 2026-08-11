@@ -25,6 +25,7 @@ const session = require('express-session');
 const exifr = require('exifr');
 
 const { loadTickets, saveTickets, generateTickets } = require('./exif-reader');
+const githubSync = require('./github-sync');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -195,6 +196,9 @@ app.post('/api/found', (req, res) => {
   req.session.foundConfirmed = true;
   saveTickets(tickets);
 
+  // Auto-commit do GitHub (trwała zmiana, Render auto-redeploy)
+  githubSync.enqueueCommit(`Bilet #${ticket.id} odebrany przez uczestnika [auto]`).catch(() => {});
+
   res.json({ success: true, distance: Math.round(distance) });
 });
 
@@ -231,6 +235,7 @@ app.post('/admin/toggle/:id', requireAdmin, (req, res) => {
 
   ticket.is_found = !ticket.is_found;
   saveTickets(tickets);
+  githubSync.enqueueCommit(`Admin: bilet #${id} ${ticket.is_found ? 'znaleziony' : 'wolny'}`).catch(() => {});
   res.json({ success: true, is_found: ticket.is_found });
 });
 
@@ -250,6 +255,7 @@ app.post('/admin/gps/:id', requireAdmin, (req, res) => {
   ticket.lat = latNum;
   ticket.lng = lngNum;
   saveTickets(tickets);
+  githubSync.enqueueCommit(`Admin: GPS biletu #${id}`).catch(() => {});
   res.json({ success: true, lat: ticket.lat, lng: ticket.lng });
 });
 
@@ -266,6 +272,7 @@ app.post('/admin/hint/:id', requireAdmin, (req, res) => {
 
   ticket.hint_text = hint_text;
   saveTickets(tickets);
+  githubSync.enqueueCommit(`Admin: wskazówka biletu #${id}`).catch(() => {});
   res.json({ success: true });
 });
 
