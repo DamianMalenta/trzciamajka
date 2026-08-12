@@ -27,6 +27,12 @@ let isEnabled = !!GITHUB_TOKEN;
 let commitQueue = [];
 let isProcessing = false;
 
+// Diagnostyka — ostatni błąd i ostatni sukces (do endpointu /api/status).
+let lastError = null;
+let lastErrorTime = null;
+let lastSuccess = null;
+let lastSuccessTime = null;
+
 if (!isEnabled) {
   console.log('[github-sync] Wyłączony — brak GITHUB_TOKEN. Zmiany nie są synchronizowane z GitHub.');
 } else {
@@ -129,11 +135,16 @@ async function processQueue() {
       const sha = await getFileSha();
       const result = await commitFile(content, message, sha);
       console.log(`[github-sync] ✅ Commit: "${message}"`);
+      lastSuccess = message;
+      lastSuccessTime = new Date().toISOString();
+      lastError = null;
       resolve(result);
     } catch (err) {
       console.error(`[github-sync] ❌ Błąd commitu: ${err.message}`);
+      lastError = err.message;
+      lastErrorTime = new Date().toISOString();
       reject(err);
-      // Przerwij kolejkę — następny commit spróbuje od nowa
+      // Przerbij kolejkę — następny commit spróbuje od nowa
       break;
     }
   }
@@ -141,4 +152,20 @@ async function processQueue() {
   isProcessing = false;
 }
 
-module.exports = { enqueueCommit, isEnabled: () => isEnabled };
+module.exports = {
+  enqueueCommit,
+  isEnabled: () => isEnabled,
+  getStatus: () => ({
+    enabled: isEnabled,
+    hasToken: !!GITHUB_TOKEN,
+    tokenPrefix: GITHUB_TOKEN ? GITHUB_TOKEN.slice(0, 4) + '...' : null,
+    owner: GITHUB_OWNER,
+    repo: GITHUB_REPO,
+    branch: GITHUB_BRANCH,
+    lastSuccess,
+    lastSuccessTime,
+    lastError,
+    lastErrorTime,
+    queueLength: commitQueue.length,
+  }),
+};

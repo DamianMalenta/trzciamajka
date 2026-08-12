@@ -285,6 +285,15 @@ app.get('/admin/logout', (req, res) => {
   res.redirect('/admin');
 });
 
+// Endpoint diagnostyczny — status synchronizacji z GitHub.
+// Chroniony hasłem admina (ale zwraca JSON, nie przekierowuje).
+app.get('/api/status', (req, res) => {
+  if (!req.session || !req.session.isAdmin) {
+    return res.json({ error: 'Wymagane logowanie admina' });
+  }
+  res.json(githubSync.getStatus());
+});
+
 app.post('/admin/toggle/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const tickets = loadTickets() || [];
