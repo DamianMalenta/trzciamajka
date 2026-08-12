@@ -446,46 +446,15 @@
   </style>
 </head>
 <body>
-  <!-- Baner dla WebView FB/Messenger/Instagram: GPS tam nie działa.
-       Wykrywamy i proponujemy otwarcie w prawdziwej przeglądarce. -->
+  <!-- Baner WebView ukryty — działa tylko u niektórych użytkowników,
+       a u większości GPS działa normalnie. Kod detekcji pozostaje na
+       wypadek ponownej aktywacji w przyszłości. -->
   <div class="webview-banner" id="webviewBanner" style="display:none;">
     <div class="webview-banner-content">
       <span>📍 Lokalizacja nie działa w tej przeglądarce.</span>
       <a href="#" id="webviewOpenBtn" class="webview-open-btn">Otwórz w przeglądarce</a>
     </div>
   </div>
-
-  <script>
-    (function() {
-      const ua = navigator.userAgent || '';
-      // WebView Facebook/Messenger/Instagram na Androidzie i iOS.
-      const isFBWebView = /FBAN|FBAV|FB_IAB|FB4A|FBBV|FBMS|Instagram/i.test(ua);
-      // Inne WebView (LinkedIn, Twitter/X, TikTok).
-      const isOtherWebView = /LinkedInApp|Twitter\/|Tweetbot|Tiktok/i.test(ua);
-      // Chrome WebView (Android) bez tokena w30 = często WebView.
-      const isAndroidWebview = /Android.*; wv\)/i.test(ua);
-
-      if (isFBWebView || isOtherWebView || isAndroidWebview) {
-        const banner = document.getElementById('webviewBanner');
-        if (banner) banner.style.display = 'block';
-
-        const btn = document.getElementById('webviewOpenBtn');
-        if (btn) {
-          const url = window.location.href;
-          // Android: intent:// wymusi otwarcie w systemowej przeglądarce.
-          // iOS: nie ma intent://, ale zwykły link z target=_blank czasem działa.
-          if (/android/i.test(ua)) {
-            btn.href = 'intent://' + url.replace(/^https?:\/\//, '') +
-              '#Intent;scheme=https;action=android.intent.action.VIEW;end;';
-          } else {
-            btn.href = url;
-            btn.target = '_blank';
-            btn.rel = 'noopener';
-          }
-        }
-      }
-    })();
-  </script>
 
   <div class="header">
     <h1>🎟️ Trzciamajka</h1>

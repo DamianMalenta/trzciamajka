@@ -22,6 +22,7 @@ const crypto = require('crypto');
 
 const express = require('express');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const exifr = require('exifr');
 
 const { loadTickets, saveTickets, generateTickets } = require('./exif-reader');
@@ -42,6 +43,7 @@ app.set('views', path.join(__dirname, 'views'));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(SESSION_SECRET));
 app.use(
   session({
     name: 'trzciamajka.sid',
@@ -118,13 +120,18 @@ app.get('/', (req, res) => {
   let view = 'ticket';
   let ticket = null;
 
-  if (req.session.assignedTicketId != null) {
-    const assigned = tickets.find((t) => t.id === req.session.assignedTicketId);
+  // Czytaj przypisany bilet z PODPISANEGO COOKIE (przetrwa restart serwera,
+  // w przeciwieństwie do MemoryStore sesji, który znika po restarcie/deployu).
+  const assignedId = req.signedCookies.assignedTicketId;
+  const foundConfirmed = req.signedCookies.foundConfirmed === '1';
+
+  if (assignedId != null) {
+    const assigned = tickets.find((t) => t.id === Number(assignedId));
 
     if (assigned && assigned.lat != null && assigned.lng != null) {
       ticket = assigned;
 
-      if (req.session.foundConfirmed) {
+      if (foundConfirmed) {
         // Uczestnik potwierdził znalezienie — ekran gratulacji.
         view = 'congrats';
       } else if (assigned.is_found) {
@@ -135,16 +142,21 @@ app.get('/', (req, res) => {
         view = 'ticket';
       }
     } else {
-      // Przypisany bilet nie istnieje lub stracił współrzędne — wyczyść i wylosuj nowy.
-      delete req.session.assignedTicketId;
-      delete req.session.foundConfirmed;
+      // Przypisany bilet nie istnieje lub stracił współrzędne — wyczyść cookie i wylosuj nowy.
+      res.clearCookie('assignedTicketId');
+      res.clearCookie('foundConfirmed');
     }
   }
 
-  // Pierwsza wizyta (brak przypisanego biletu) — wylosuj jeden i zapamiętaj.
+  // Pierwsza wizyta (brak przypisanego biletu) — wylosuj jeden i zapamiętaj w cookie.
   if (!ticket && view === 'ticket' && drawable.length > 0) {
     ticket = drawable[Math.floor(Math.random() * drawable.length)];
-    req.session.assignedTicketId = ticket.id;
+    res.cookie('assignedTicketId', ticket.id, {
+      signed: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dni
+    });
     view = 'ticket';
   }
 
@@ -174,13 +186,13 @@ app.get('/', (req, res) => {
  */
 app.post('/api/found', (req, res) => {
   const tickets = loadTickets() || [];
-  const id = req.session.assignedTicketId;
+  const id = req.signedCookies.assignedTicketId;
 
   if (id == null) {
     return res.json({ success: false, message: 'Nie masz przypisanego biletu.' });
   }
 
-  const ticket = tickets.find((t) => t.id === id);
+  const ticket = tickets.find((t) => t.id === Number(id));
   if (!ticket) {
     return res.json({ success: false, message: 'Bilet nie istnieje.' });
   }
@@ -204,7 +216,12 @@ app.post('/api/found', (req, res) => {
     }
     // Kod OK — oznacz bilet jako znaleziony.
     ticket.is_found = true;
-    req.session.foundConfirmed = true;
+    res.cookie('foundConfirmed', '1', {
+      signed: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dni
+    });
     saveTickets(tickets);
     githubSync.enqueueCommit(`Bilet #${ticket.id} odebrany kodem [auto]`).catch(() => {});
     return res.json({ success: true, method: 'code' });
@@ -232,7 +249,12 @@ app.post('/api/found', (req, res) => {
 
   // Odległość OK — oznacz bilet jako znaleziony.
   ticket.is_found = true;
-  req.session.foundConfirmed = true;
+  res.cookie('foundConfirmed', '1', {
+    signed: true,
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dni
+  });
   saveTickets(tickets);
   githubSync.enqueueCommit(`Bilet #${ticket.id} odebrany przez uczestnika [auto]`).catch(() => {});
   res.json({ success: true, method: 'gps', distance: Math.round(distance) });
