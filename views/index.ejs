@@ -18,6 +18,34 @@
       overflow: hidden;
     }
 
+    /* --- Baner WebView FB/Messenger (GPS nie działa) --- */
+    .webview-banner {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: #fff;
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(220,38,38,0.3);
+    }
+    .webview-banner-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .webview-open-btn {
+      background: #fff;
+      color: #dc2626;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: transform 0.2s;
+    }
+    .webview-open-btn:active { transform: scale(0.95); }
+
     /* --- Header (kompaktowy) --- */
     .header {
       padding: 12px 16px;
@@ -366,18 +394,6 @@
       dashArray: '8 8';
     }
 
-    /* --- Strzałki kierunkowe na linii trasy --- */
-    .route-arrow-icon {
-      font-size: 1.1rem;
-      color: #fbbf24;
-      text-align: center;
-      line-height: 18px;
-      width: 18px;
-      height: 18px;
-      text-shadow: 0 0 4px rgba(15,23,42,0.9);
-      pointer-events: none;
-    }
-
     /* --- Okruszki (breadcrumb historii pozycji) --- */
     .breadcrumb-dot {
       width: 7px;
@@ -430,6 +446,47 @@
   </style>
 </head>
 <body>
+  <!-- Baner dla WebView FB/Messenger/Instagram: GPS tam nie działa.
+       Wykrywamy i proponujemy otwarcie w prawdziwej przeglądarce. -->
+  <div class="webview-banner" id="webviewBanner" style="display:none;">
+    <div class="webview-banner-content">
+      <span>📍 Lokalizacja nie działa w tej przeglądarce.</span>
+      <a href="#" id="webviewOpenBtn" class="webview-open-btn">Otwórz w przeglądarce</a>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const ua = navigator.userAgent || '';
+      // WebView Facebook/Messenger/Instagram na Androidzie i iOS.
+      const isFBWebView = /FBAN|FBAV|FB_IAB|FB4A|FBBV|FBMS|Instagram/i.test(ua);
+      // Inne WebView (LinkedIn, Twitter/X, TikTok).
+      const isOtherWebView = /LinkedInApp|Twitter\/|Tweetbot|Tiktok/i.test(ua);
+      // Chrome WebView (Android) bez tokena w30 = często WebView.
+      const isAndroidWebview = /Android.*; wv\)/i.test(ua);
+
+      if (isFBWebView || isOtherWebView || isAndroidWebview) {
+        const banner = document.getElementById('webviewBanner');
+        if (banner) banner.style.display = 'block';
+
+        const btn = document.getElementById('webviewOpenBtn');
+        if (btn) {
+          const url = window.location.href;
+          // Android: intent:// wymusi otwarcie w systemowej przeglądarce.
+          // iOS: nie ma intent://, ale zwykły link z target=_blank czasem działa.
+          if (/android/i.test(ua)) {
+            btn.href = 'intent://' + url.replace(/^https?:\/\//, '') +
+              '#Intent;scheme=https;action=android.intent.action.VIEW;end;';
+          } else {
+            btn.href = url;
+            btn.target = '_blank';
+            btn.rel = 'noopener';
+          }
+        }
+      }
+    })();
+  </script>
+
   <div class="header">
     <h1>🎟️ Trzciamajka</h1>
     <div class="progress-mini">
@@ -547,7 +604,6 @@
     const TICKET_LNG = <%= ticket.lng %>;
     const GEOFENCE_RADIUS = 30;   // metry — promień odbioru biletu
     const BLUR_RADIUS = 100;      // metry — promień rozmytego kółka wokół biletu
-    const ARROW_SPACING_METERS = 40;  // co ile metrów na linii pojawić się ma strzałka kierunkowa
     const BREADCRUMB_MAX = 30;        // ile ostatnich pozycji zapamiętać (ślad „okruszków")
     const BREADCRUMB_MIN_DIST_M = 8;  // ignoruj odczyty bliżej niż X m od ostatniego okruszka (eliminuje szum GPS)
     const WALK_SPEED_KMH = 5;         // założenie prędkości piesza do ETA
@@ -581,44 +637,8 @@
       return (m / 1000).toFixed(2) + ' km';
     }
 
-    // Kąt bearing (0=N, 90=E, 180=S, 270=W) od punktu A do B.
-    function bearing(lat1, lng1, lat2, lng2) {
-      const toRad = d => d * Math.PI / 180;
-      const toDeg = r => r * 180 / Math.PI;
-      const φ1 = toRad(lat1), φ2 = toRad(lat2);
-      const Δλ = toRad(lng2 - lng1);
-      const y = Math.sin(Δλ) * Math.cos(φ2);
-      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-      return (toDeg(Math.atan2(y, x)) + 360) % 360;
-    }
-
-    // Interpolacja punktów wzdłuż linii geograficznej (przybliżenie equirectangular,
-    // wystarczające dla dystansów < 1 km). Zwraca tablicę {lat,lng,frac} dla punktów
-    // oddalonych o `spacingM` metrów od startu, z pominięciem końców.
-    function interpolateRoute(lat1, lng1, lat2, lng2, spacingM) {
-      const total = haversine(lat1, lng1, lat2, lng2);
-      if (total <= spacingM * 1.5) return [];
-      const steps = Math.floor(total / spacingM);
-      const pts = [];
-      for (let i = 1; i < steps; i++) {
-        const dFromStart = i * spacingM;
-        const frac = dFromStart / total;
-        const lat = lat1 + (lat2 - lat1) * frac;
-        const lng = lng1 + (lng2 - lng1) * frac;
-        pts.push({ lat, lng, frac });
-      }
-      return pts;
-    }
-
-    // Strzałka kierunkowa jako divIcon obrócona o `deg` (bearing).
-    function makeArrowIcon(deg) {
-      return L.divIcon({
-        className: '',
-        html: '<div class="route-arrow-icon" style="transform: rotate(' + deg + 'deg);">➤</div>',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
-      });
-    }
+    // (Funkcje bearing/interpolateRoute/makeArrowIcon usunięte — routing
+    // po drogach przez OSRM nie potrzebuje strzałek kierunkowych.)
 
     function makeBreadcrumbIcon() {
       return L.divIcon({
@@ -629,37 +649,65 @@
       });
     }
 
-    // Rysuje/aktualizuje linię trasy od użytkownika do biletu oraz strzałki kierunkowe.
+    // Rysuje/aktualizuje linię trasy od użytkownika do biletu.
+    // Najpierw próbuje OSRM (routing po drogach); gdy OSRM nie odpowie
+    // w 3s lub zwróci błąd — fallback do prostej linii przerywanej.
+    let osrmAvailable = true; // wyłącz po pierwszym timeoutcie
     function updateRouteLine(lat, lng) {
       const from = [lat, lng];
       const to = [TICKET_LAT, TICKET_LNG];
 
-      if (!routeLine) {
-        routeLine = L.polyline([from, to], {
-          color: '#fbbf24',
-          weight: 3,
-          opacity: 0.7,
-          dashArray: '8 8',
-        }).addTo(map);
-      } else {
-        routeLine.setLatLngs([from, to]);
-      }
-
-      // Wyczyść stare strzałki
+      // Wyczyść starą linię i strzałki
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
       routeArrowMarkers.forEach(m => map.removeLayer(m));
       routeArrowMarkers = [];
 
-      // Dodaj strzałki wzdłuż linii (pomijamy, gdy bardzo blisko — wtedy linia jest krótka)
-      const pts = interpolateRoute(lat, lng, TICKET_LAT, TICKET_LNG, ARROW_SPACING_METERS);
-      const baseBearing = bearing(lat, lng, TICKET_LAT, TICKET_LNG);
-      pts.forEach(p => {
-        const m = L.marker([p.lat, p.lng], {
-          icon: makeArrowIcon(baseBearing),
-          interactive: false,
-          keyboard: false,
-        }).addTo(map);
-        routeArrowMarkers.push(m);
-      });
+      // Gdy bardzo blisko (< 30m) — nie rysuj linii, tylko pinezki.
+      const dist = haversine(lat, lng, TICKET_LAT, TICKET_LNG);
+      if (dist <= GEOFENCE_RADIUS) return;
+
+      // Spróbuj OSRM (routing po drogach) — tylko jeśli wcześniej działał.
+      if (osrmAvailable && navigator.onLine) {
+        const url = 'https://router.project-osrm.org/route/v1/foot/' +
+          lng + ',' + lat + ';' + TICKET_LNG + ',' + TICKET_LAT +
+          '?overview=full&geometries=geojson';
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        fetch(url, { signal: controller.signal })
+          .then(r => r.json())
+          .then(data => {
+            clearTimeout(timeoutId);
+            if (data.code === 'Ok' && data.routes && data.routes[0] && data.routes[0].geometry) {
+              const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+              routeLine = L.polyline(coords, {
+                color: '#fbbf24',
+                weight: 4,
+                opacity: 0.8,
+              }).addTo(map);
+            } else {
+              drawStraightLine(from, to);
+            }
+          })
+          .catch(() => {
+            clearTimeout(timeoutId);
+            osrmAvailable = false; // nie próbuj ponownie w tej sesji
+            drawStraightLine(from, to);
+          });
+      } else {
+        drawStraightLine(from, to);
+      }
+    }
+
+    // Fallback: prosta linia przerywana (bez strzałek).
+    function drawStraightLine(from, to) {
+      routeLine = L.polyline([from, to], {
+        color: '#fbbf24',
+        weight: 3,
+        opacity: 0.6,
+        dashArray: '8 8',
+      }).addTo(map);
     }
 
     // Dodaje nowy „okruszek" do śladu, jeśli ruch > BREADCRUMB_MIN_DIST_M.
