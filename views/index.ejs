@@ -910,6 +910,23 @@
     function onError(err) {
       document.getElementById('gpsWarning').style.display = 'block';
 
+      // Wyślij log błędu na serwer (diagnostyka).
+      const logData = {
+        code: err.code,
+        message: err.message,
+        PERMISSION_DENIED: err.PERMISSION_DENIED,
+        POSITION_UNAVAILABLE: err.POSITION_UNAVAILABLE,
+        TIMEOUT: err.TIMEOUT,
+        userAgent: navigator.userAgent,
+        secureContext: window.isSecureContext,
+        hasGeolocation: !!navigator.geolocation,
+      };
+      fetch('/api/gps-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(logData),
+      }).catch(() => {});
+
       if (err.code === err.PERMISSION_DENIED) {
         // W Brave prompt się pojawia, ale po akceptacji Shields i tak blokuje
         // API — dlatego najpierw sprawdzamy Brave.
@@ -961,8 +978,6 @@
       }
 
       // 2. Sprawdź czy jesteśmy w secure context (HTTPS lub localhost).
-      // Geolocation API nie działa na zwykłym HTTP — to częsta przyczyna
-      // komunikatu „ta strona nie może prosić o Twoją lokalizację”.
       if (!window.isSecureContext) {
         showGpsWarning(
           'Lokalizacja działa tylko na połączeniu HTTPS (lub localhost). ' +
@@ -971,56 +986,17 @@
         return;
       }
 
-      // 3. W Brave sprawdź zanim wywołamy watchPosition — Shields blokuje
-      // API niezależnie od odpowiedzi użytkownika, więc prompt jest bez sensu.
-      detectBrave().then((isBrave) => {
-        if (isBrave) {
-          // Nie pokazuj od razu ostrzeżenia — daj szansę, że użytkownik już
-          // wyłączył Shields. Jeśli watchPosition zawiedzie, onError() pokaże
-          // instrukcję Brave. Najpierw więc sprawdź stan uprawnienia.
-          if (navigator.permissions && navigator.permissions.query) {
-            navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-              if (result.state === 'denied') {
-                braveWarning();
-                return;
-              }
-              startWatch();
-            }).catch(startWatch);
-          } else {
-            startWatch();
-          }
-          return;
-        }
-
-        // 4. Nie-Brave: sprawdź stan uprawnienia przed watchPosition.
-        if (navigator.permissions && navigator.permissions.query) {
-          navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-            if (result.state === 'denied') {
-              showGpsWarning(
-                'Dostęp do lokalizacji jest zablokowany w przeglądarce.<br><br>' +
-                '<b>Aby odblokować:</b><br>' +
-                '1. Kliknij ikonę 🔒 po lewej stronie paska adresu.<br>' +
-                '2. Znajdź „Lokalizacja” → „Zezwól”.<br>' +
-                '3. Odśwież stronę.<br><br>' +
-                'Bez GPS nie możesz znaleźć biletu.'
-              );
-              return;
-            }
-            startWatch();
-          }).catch(startWatch);
-        } else {
-          startWatch();
-        }
-      });
-
-      function startWatch() {
-        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        watchId = navigator.geolocation.watchPosition(
-          onPosition,
-          onError,
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
-        );
-      }
+      // 3. BEZPOŚREDNIO wywołaj watchPosition — NIE sprawdzaj permissions
+      // wcześniej. Sprawdzanie permissions.query przed wywołaniem może
+      // blokować prompt na Androidzie (zwraca 'denied' gdy prompt jest
+      // możliwy). Po prostu wywołaj API i pozwól przeglądarce pokazać prompt.
+      // Wszystkie błędy obsłuży onError().
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(
+        onPosition,
+        onError,
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+      );
     }
 
     function confirmFound() {

@@ -294,6 +294,27 @@ app.get('/api/status', (req, res) => {
   res.json(githubSync.getStatus());
 });
 
+// Endpoint do logowania błędów GPS z klienta (diagnostyka Android).
+// Nie wymaga autoryzacji — żeby logi mogły być wysłane z każdej przeglądarki.
+const gpsLogs = [];
+app.post('/api/gps-log', (req, res) => {
+  const entry = {
+    time: new Date().toISOString(),
+    ...req.body,
+  };
+  gpsLogs.push(entry);
+  if (gpsLogs.length > 50) gpsLogs.shift(); // max 50 logów
+  console.log('[GPS-LOG]', JSON.stringify(entry));
+  res.json({ ok: true });
+});
+
+app.get('/api/gps-logs', (req, res) => {
+  if (!req.session || !req.session.isAdmin) {
+    return res.json({ error: 'Wymagane logowanie admina' });
+  }
+  res.json(gpsLogs);
+});
+
 app.post('/admin/toggle/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const tickets = loadTickets() || [];
