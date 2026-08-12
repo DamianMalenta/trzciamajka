@@ -446,13 +446,17 @@
   </style>
 </head>
 <body>
-  <!-- Baner WebView ukryty — działa tylko u niektórych użytkowników,
-       a u większości GPS działa normalnie. Kod detekcji pozostaje na
-       wypadek ponownej aktywacji w przyszłości. -->
+  <!-- Baner domyślnie ukryty — pokazywany przez showWebviewFallback(),
+       gdy geolokalizacja realnie nie zadziała (błąd GPS, brak API,
+       brak secure context). Ukrywany ponownie, gdy GPS zacznie działać. -->
   <div class="webview-banner" id="webviewBanner" style="display:none;">
     <div class="webview-banner-content">
       <span>📍 Lokalizacja nie działa w tej przeglądarce.</span>
       <a href="#" id="webviewOpenBtn" class="webview-open-btn">Otwórz w przeglądarce</a>
+    </div>
+    <div class="webview-banner-hint" style="margin-top:6px; font-size:0.8rem; opacity:0.9;">
+      Jeśli przycisk nie zadziała (np. w Messengerze na iOS), użyj menu
+      „⋯ → Otwórz w przeglądarce” w prawym górnym rogu aplikacji.
     </div>
   </div>
 
@@ -865,6 +869,7 @@
       currentLat = pos.coords.latitude;
       currentLng = pos.coords.longitude;
       document.getElementById('gpsWarning').style.display = 'none';
+      document.getElementById('webviewBanner').style.display = 'none';
 
       // Ukryj przycisk start — GPS działa, nie potrzebny już.
       const startBtn = document.getElementById('gpsStartBtn');
@@ -907,8 +912,37 @@
       );
     }
 
+    // Pokaż baner z przyciskiem „Otwórz w przeglądarce” — używane,
+    // gdy geolokalizacja nie działa (błąd GPS, brak API, brak HTTPS).
+    function showWebviewFallback() {
+      const banner = document.getElementById('webviewBanner');
+      if (banner) banner.style.display = 'flex';
+      const btn = document.getElementById('webviewOpenBtn');
+      if (btn) btn.href = window.location.href;
+    }
+
+    (function setupWebviewOpenBtn() {
+      const btn = document.getElementById('webviewOpenBtn');
+      if (!btn) return;
+      btn.addEventListener('click', function (e) {
+        btn.href = window.location.href;
+        const isAndroid = /android/i.test(navigator.userAgent);
+        if (isAndroid) {
+          e.preventDefault();
+          // Wymuś otwarcie w zewnętrznej przeglądarce przez intent://
+          const intentUrl = 'intent://' + window.location.host +
+            window.location.pathname + window.location.search +
+            '#Intent;scheme=' + window.location.protocol.replace(':', '') + ';end';
+          window.location.href = intentUrl;
+        }
+        // Na iOS (np. Messenger) automatyczne otwarcie często nie działa —
+        // wtedy pomaga instrukcja w banerze („⋯ → Otwórz w przeglądarce”).
+      });
+    })();
+
     function onError(err) {
       document.getElementById('gpsWarning').style.display = 'block';
+      showWebviewFallback();
 
       // Wyślij log błędu na serwer (diagnostyka).
       const logData = {
@@ -973,6 +1007,7 @@
       // 1. Sprawdź czy przeglądarka wspiera geolokalizację.
       if (!navigator.geolocation) {
         showGpsWarning('Twoja przeglądarka nie obsługuje geolokalizacji.');
+        showWebviewFallback();
         if (startBtn) { startBtn.disabled = false; startBtn.textContent = '📍 Włącz lokalizację, aby znaleźć bilet'; }
         return;
       }
@@ -983,6 +1018,7 @@
           'Lokalizacja działa tylko na połączeniu HTTPS (lub localhost). ' +
           'Obecna strona jest ładowana przez HTTP — otwórz ją przez HTTPS.'
         );
+        showWebviewFallback();
         return;
       }
 
