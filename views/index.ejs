@@ -916,7 +916,7 @@
     // gdy geolokalizacja nie działa (błąd GPS, brak API, brak HTTPS).
     function showWebviewFallback() {
       const banner = document.getElementById('webviewBanner');
-      if (banner) banner.style.display = 'flex';
+      if (banner) banner.style.display = 'block';
       const btn = document.getElementById('webviewOpenBtn');
       if (btn) btn.href = window.location.href;
     }
